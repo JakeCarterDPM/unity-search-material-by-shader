@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -11,14 +12,23 @@ public class SearchMaterialByShader : EditorWindow
 {
     private Shader selectedShader;
     private List<Material> foundMaterials = new();
+    private List<Editor> materialPreviews = new();
     private Vector2 scrollPos;
     private bool showResults = false;
     private int currentPage = 0;
     private const int materialsPerPage = 10;
     private const int buttonsPerRow = 10;
-    private Editor materialPreviewObjectEditor;
     private GUIStyle bgColor;
-
+    private int heightSelectedShaderPicker = 50;
+    private readonly int heightSelectedShaderPickerInitial = 50;
+    private readonly int heightSelectedShaderPickerResults = 25;
+    private int heightFindMaterialsBtn = 100;
+    private readonly int heightFindMaterialsBtnInital = 100;
+    private readonly int heightFindMaterialsBtnResults = 25;
+    private int startIndex = 0;
+    private int endIndex = 0;
+    private int pageCount = 0;
+    private string currentPageTxt;
     [MenuItem("Tools/Search Material By Shader", false, 22)]
     public static void ShowWindow()
     {
@@ -33,59 +43,87 @@ public class SearchMaterialByShader : EditorWindow
     {
         bgColor = new();
         selectedShader = Shader.Find("Standard");
+        MenuChangeCache();
     }
-
-    private void OnGUI()
+    private void MenuChangeCache()
     {
-        //INDEXING
-        int startIndex = currentPage * materialsPerPage;
-        int endIndex = Mathf.Min(startIndex + materialsPerPage, foundMaterials.Count);
-
-        //SETTINGS
-        if (!showResults)
-        {
-            GUILayout.Space(25f);
-            GUILayout.Label($"Target Shader:");
-            selectedShader = EditorGUILayout.ObjectField(selectedShader, typeof(Shader), false, GUILayout.Height(50)) as Shader;
-
-            if (GUILayout.Button("Find Materials", GUILayout.Height(100)))
-            {
-                string shaderName = selectedShader.name;
-                FindShader(shaderName);
-                showResults = true;
-                currentPage = 0;
-            }
-        }
-
         if (showResults)
         {
-            selectedShader = EditorGUILayout.ObjectField("Taget Shader: ", selectedShader, typeof(Shader), false, GUILayout.Height(25)) as Shader;
+            //Page Navigation
+            startIndex = currentPage * materialsPerPage;
+            endIndex = Mathf.Min(startIndex + materialsPerPage, foundMaterials.Count);
+            pageCount = Mathf.CeilToInt((float)foundMaterials.Count / materialsPerPage);
+            currentPageTxt = $"Current Page: {currentPage + 1}/{pageCount}";
 
-            if (GUILayout.Button("Find Materials"))
+            //Material Previews
+            materialPreviews.Clear();
+            materialPreviews = new Editor[foundMaterials.Count].ToList();
+            for (int i = startIndex; i < endIndex; i++)
             {
-                string shaderName = selectedShader.name;
-                FindShader(shaderName);
-                showResults = true;
-                currentPage = 0;
+                Material mat = foundMaterials[i];
+                Editor materialPreviewObjectEditor = Editor.CreateEditor(mat);
+                materialPreviews[i] = materialPreviewObjectEditor;
             }
 
+            //GUI Formatting
+            heightSelectedShaderPicker = heightSelectedShaderPickerResults;
+            heightFindMaterialsBtn = heightFindMaterialsBtnResults;
+        }
+        else
+        {
+            //GUI Formatting
+            heightSelectedShaderPicker = heightSelectedShaderPickerInitial;
+            heightFindMaterialsBtn = heightFindMaterialsBtnInital;
+        }
+    }
+    private void FindMaterials()
+    {
+        FindMaterialsWithShader(selectedShader.name);
+        showResults = true;
+        currentPage = 0;
+        MenuChangeCache();
+    }
+    private void SelectMaterial(Material mat)
+    {
+        Selection.activeObject = mat;
+        EditorGUIUtility.PingObject(mat);
+    }
+    private void SelectAllMaterials()
+    {
+        Selection.objects = foundMaterials.ToArray();
+    }
+    private void SelectAllMaterialsOnPage()
+    {
+        List<Material> materialsOnPage = foundMaterials.GetRange(startIndex, endIndex - startIndex);
+        Selection.objects = materialsOnPage.ToArray();
+    }
+    private void OnGUI()
+    {
+        //Main Buttons
+        GUILayout.Space(25f);
+        GUILayout.Label($"Target Shader:");
+        selectedShader = EditorGUILayout.ObjectField(selectedShader, typeof(Shader), false, GUILayout.Height(heightSelectedShaderPicker)) as Shader;
+        if (GUILayout.Button("Find Materials", GUILayout.Height(heightFindMaterialsBtn)))
+        {
+            FindMaterials();
+        }
+
+        //Results Panel
+        if (showResults)
+        {
+            //Selection Buttons
             if (GUILayout.Button("Select All - On Page"))
             {
-                if (showResults)
-                {
-                    List<Material> materialsOnPage = foundMaterials.GetRange(startIndex, endIndex - startIndex);
-                    Selection.objects = materialsOnPage.ToArray();
-                }
+                SelectAllMaterialsOnPage();
             }
             if (GUILayout.Button("Select All - All Pages"))
             {
-                Selection.objects = foundMaterials.ToArray();
+                SelectAllMaterials();
             }
 
-            //PAGE NAVIGATION        
-            int pageCount = Mathf.CeilToInt((float)foundMaterials.Count / materialsPerPage);
+            //Page Navigation
             GUILayout.Space(10f);
-            GUILayout.Label($"Current Page: {currentPage + 1}/{pageCount}", GUILayout.Height(20));
+            GUILayout.Label(currentPageTxt, GUILayout.Height(20));
             GUILayout.BeginVertical();
             GUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
             for (int i = 0; i < pageCount; i++)
@@ -99,58 +137,51 @@ public class SearchMaterialByShader : EditorWindow
                 if (GUILayout.Button((i + 1).ToString(), GUILayout.ExpandWidth(true), GUILayout.Height(20)))
                 {
                     currentPage = i;
+                    MenuChangeCache();
                 }
                 GUI.enabled = true;
             }
             GUILayout.EndHorizontal();
             GUILayout.EndVertical();
 
-
-
-            GUILayout.Label("Found Materials:");
-
-            //SCROLL VIEW
+            //Found Materials List
+            GUILayout.Label($"Found Materials: {foundMaterials.Count}");
             scrollPos = EditorGUILayout.BeginScrollView(scrollPos, GUILayout.Width(position.width), GUILayout.ExpandHeight(true));
-
-            //LISTED MATERIALS
             for (int i = startIndex; i < endIndex; i++)
             {
                 Material mat = foundMaterials[i];
-                if (mat == null) continue;
+                if (mat == null)
+                {
+                    MenuChangeCache();
+                    continue;
+                }
                 EditorGUILayout.BeginHorizontal();
-
-                materialPreviewObjectEditor = Editor.CreateEditor(mat);
-                materialPreviewObjectEditor.OnPreviewGUI(GUILayoutUtility.GetRect(128, 128), bgColor);
-
+                materialPreviews[i].OnPreviewGUI(GUILayoutUtility.GetRect(128, 128), bgColor);
                 EditorGUILayout.BeginVertical();
-                EditorGUILayout.LabelField(AssetDatabase.GetAssetPath(mat).Replace("Assets/", ""), GUILayout.Height(20));
-
+                EditorGUILayout.LabelField(AssetDatabase.GetAssetPath(mat), GUILayout.Height(20));
                 if (GUILayout.Button(mat.name, GUILayout.Height(80)))
                 {
-                    Selection.activeObject = mat;
-                    EditorGUIUtility.PingObject(mat);
+                    SelectMaterial(mat);
                 }
-
                 EditorGUILayout.EndVertical();
-
                 EditorGUILayout.EndHorizontal();
                 GUILayout.Space(10f);
             }
-
             EditorGUILayout.EndScrollView();
         }
-        GUILayout.FlexibleSpace(); // Add flexible space to push the button to the bottom
-        GUILayout.BeginHorizontal(); // Begin horizontal group to align button to the right
-        GUILayout.FlexibleSpace(); // Add another flexible space to align button to the right
+
+        //Credits 
+        GUILayout.FlexibleSpace();
+        GUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
         if (GUILayout.Button("Created by Jake Carter", EditorStyles.linkLabel, GUILayout.ExpandWidth(false), GUILayout.ExpandHeight(false)))
         {
             Application.OpenURL("https://jcfolio.weebly.com/");
         }
-        GUILayout.EndHorizontal(); // End horizontal group
+        GUILayout.EndHorizontal();
     }
 
-
-    private void FindShader(string shaderName)
+    private void FindMaterialsWithShader(string shaderName)
     {
         int count = 0;
         foundMaterials.Clear();
