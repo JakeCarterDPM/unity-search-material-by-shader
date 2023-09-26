@@ -7,9 +7,10 @@ A basic Unity editor window that allows you to find materials by shader. Made us
 One time I was trying to find a way to select the materials in my project by their shader. But I couldn't find a way to do it. So that's why I created this editor extension for Unity.  
 
 ## How to Use  
-1. Install it by placing the SearchMaterialByShader into any folder named "Editor" within your Unity project.
-2. At the top tool bar, click "Tools", then "Search Material By Shader"
-3. It'll default to the Standard shader, but you can pick any other if you wish.
+1. Download the latest release from the [releases page](https://github.com/JakeCarterDPM/unity-search-material-by-shader/releases).
+2. Install it by extracting the SearchMaterialByShader.cs file into any folder named "Editor" within your Unity project.
+2. Within unity, at the top tool bar, click "Tools", then "Search Material By Shader"
+3. It will default to the Standard shader, but you can pick any other if you wish.
 4. Click find materials.
 5. You can now select the material(s) that it has found!
 
