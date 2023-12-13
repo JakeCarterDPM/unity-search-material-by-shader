@@ -1,6 +1,7 @@
 // Created by Jake Carter - 2023/03/15. Using Unity 2021.3.20f1
 // Modification is allowed. Crediting is required.
 // Purpose: Searches materials by shader.
+// Version 1.1.1 - Filter for embedded materials update.
 
 using System;
 using System.Collections.Generic;
@@ -10,9 +11,16 @@ using UnityEngine;
 
 public class SearchMaterialByShader : EditorWindow
 {
+    //Options
     private Shader selectedShader;
+    private bool includeEmbeddedMaterials = false;
+    private bool onlyEmbeddedMaterials = false;
+
+    //Results
     private List<Material> foundMaterials = new();
     private List<Editor> materialPreviews = new();
+
+    //Window Management
     private Vector2 scrollPos;
     private bool showResults = false;
     private int currentPage = 0;
@@ -29,6 +37,7 @@ public class SearchMaterialByShader : EditorWindow
     private int endIndex = 0;
     private int pageCount = 0;
     private string currentPageTxt;
+
     [MenuItem("Tools/Search Material By Shader", false, 22)]
     public static void ShowWindow()
     {
@@ -97,12 +106,63 @@ public class SearchMaterialByShader : EditorWindow
         List<Material> materialsOnPage = foundMaterials.GetRange(startIndex, endIndex - startIndex);
         Selection.objects = materialsOnPage.ToArray();
     }
+    private void SelectEditableMaterials()
+    {
+        List<Material> editableMaterials = new List<Material>();
+
+        foreach (Material mat in foundMaterials)
+        {
+            if (!AssetDatabase.IsMainAsset(mat))
+            {
+                // Add only editable materials to the list
+                editableMaterials.Add(mat);
+            }
+        }
+
+        if (editableMaterials.Count > 0)
+        {
+            Selection.objects = editableMaterials.ToArray();
+        }
+        else
+        {
+            Debug.LogWarning("No editable materials found.");
+        }
+    }
+
+
     private void OnGUI()
     {
         //Main Buttons
-        GUILayout.Space(25f);
+        GUILayout.Space(15);
         GUILayout.Label($"Target Shader:");
         selectedShader = EditorGUILayout.ObjectField(selectedShader, typeof(Shader), false, GUILayout.Height(heightSelectedShaderPicker)) as Shader;
+
+        //Options
+        GUILayout.Space(5);
+        GUILayout.Label($"Options:");
+        GUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
+
+        //Include
+        includeEmbeddedMaterials = GUILayout.Toggle(
+            includeEmbeddedMaterials,
+            new GUIContent("Include Embedded Materials (Un-editable).", "For materials that are embedded into files such as a 3D model, which can't be edited directly. Fix for these mats is to \"Extract Materials...\" under the materials tab for that model."),
+            GUILayout.ExpandWidth(true));
+
+        //Only
+        if (includeEmbeddedMaterials)
+        {
+            onlyEmbeddedMaterials = GUILayout.Toggle(
+                onlyEmbeddedMaterials,
+                new GUIContent("Only Embedded Materials.", "Doesn't include editable materials in results."),
+                GUILayout.ExpandWidth(true));
+        }
+        else
+        {
+            onlyEmbeddedMaterials = false;
+        }
+        GUILayout.EndHorizontal();
+
+        GUILayout.Space(5);
         if (GUILayout.Button("Find Materials", GUILayout.Height(heightFindMaterialsBtn)))
         {
             FindMaterials();
@@ -174,7 +234,7 @@ public class SearchMaterialByShader : EditorWindow
         GUILayout.FlexibleSpace();
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        if (GUILayout.Button("Created by Jake Carter", EditorStyles.linkLabel, GUILayout.ExpandWidth(false), GUILayout.ExpandHeight(false)))
+        if (GUILayout.Button("v1.1.1 Created by Jake Carter", EditorStyles.linkLabel, GUILayout.ExpandWidth(false), GUILayout.ExpandHeight(false)))
         {
             Application.OpenURL("https://jcfolio.weebly.com/");
         }
@@ -186,22 +246,48 @@ public class SearchMaterialByShader : EditorWindow
         int count = 0;
         foundMaterials.Clear();
         string[] allMaterialPaths = AssetDatabase.FindAssets("t:Material");
+
         foreach (string path in allMaterialPaths)
         {
+            //Mats within Assets only.
             string assetPath = AssetDatabase.GUIDToAssetPath(path);
-            if (assetPath.StartsWith("Assets/"))
+            if (!assetPath.StartsWith("Assets/"))
+                continue;
+
+            //Various checks.
+            Material mat = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+            if (mat == null || mat.shader == null || string.IsNullOrEmpty(mat.shader.name))
+                continue;
+            if (!mat.shader.name.Equals(shaderName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            //Check if is embedded.
+            if (IsMaterialEmbedded(assetPath))
             {
-                Material mat = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
-                if (mat != null && mat.shader != null && !string.IsNullOrEmpty(mat.shader.name))
+                //Check if including embedded mats.
+                if (includeEmbeddedMaterials)
                 {
-                    if (mat.shader.name.Equals(shaderName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        foundMaterials.Add(mat);
-                        count++;
-                    }
+                    foundMaterials.Add(mat);
+                    count++;
+                }
+            }
+            else
+            {
+                //Check if looking for embedded mats only.
+                if (!onlyEmbeddedMaterials)
+                {
+                    foundMaterials.Add(mat);
+                    count++;
                 }
             }
         }
         foundMaterials.Sort((a, b) => a.name.CompareTo(b.name));
+    }
+
+
+    private bool IsMaterialEmbedded(string assetPath)
+    {
+        Type assetType = AssetDatabase.GetMainAssetTypeAtPath(assetPath);
+        return assetType != typeof(Material);
     }
 }
